@@ -19,6 +19,7 @@ use std::os::raw;
 // use libR_sys::{EXPRSXP, BCODESXP, EXTPTRSXP, WEAKREFSXP, RAWSXP, S4SXP, NEWSXP, FREESXP};
 
 use crate::AnyError;
+use crate::error;
 use crate::wrapper::*;
 use crate::logical::*;
 
@@ -1257,6 +1258,18 @@ impl From<Vec<u8>> for Robj {
                 slice[i] = v;
             }
             Robj::Owned(sexp)
+        }
+    }
+}
+
+impl From<Result<Robj, crate::AnyError>> for Robj {
+    fn from(res: Result<Robj, crate::AnyError>) -> Self {
+        match res {
+            Ok(res) => res,
+            Err(err) => {
+                error(format!("{}", err));
+                panic!("Continuation after reporting an R error (should be unreachable)")
+            }
         }
     }
 }
