@@ -1187,6 +1187,91 @@ impl From<&[u8]> for Robj {
     }
 }
 
+/// Convert an integer Vec to an integer object.
+impl From<Vec<i32>> for Robj {
+    fn from(vals: Vec<i32>) -> Self {
+        unsafe {
+            let len = vals.len();
+            let sexp = Rf_allocVector(INTSXP, len as R_xlen_t);
+            R_PreserveObject(sexp);
+            let ptr = INTEGER(sexp);
+            let slice = std::slice::from_raw_parts_mut(ptr, len);
+            for (i, &v) in vals.iter().enumerate() {
+                slice[i] = v;
+            }
+            Robj::Owned(sexp)
+        }
+    }
+}
+
+/// Convert a bool Vec to a logical object.
+impl From<Vec<bool>> for Robj {
+    fn from(vals: Vec<bool>) -> Self {
+        unsafe {
+            let len = vals.len();
+            let sexp = Rf_allocVector(LGLSXP, len as R_xlen_t);
+            R_PreserveObject(sexp);
+            let ptr = LOGICAL(sexp);
+            let slice = std::slice::from_raw_parts_mut(ptr, len);
+            for (i, &v) in vals.iter().enumerate() {
+                slice[i] = v as i32;
+            }
+            Robj::Owned(sexp)
+        }
+    }
+}
+
+/// Convert a double Vec to a numeric object.
+impl From<Vec<f64>> for Robj {
+    fn from(vals: Vec<f64>) -> Self {
+        unsafe {
+            let len = vals.len();
+            let sexp = Rf_allocVector(REALSXP, len as R_xlen_t);
+            R_PreserveObject(sexp);
+            let ptr = REAL(sexp);
+            let slice = std::slice::from_raw_parts_mut(ptr, len);
+            for (i, &v) in vals.iter().enumerate() {
+                slice[i] = v;
+            }
+            Robj::Owned(sexp)
+        }
+    }
+}
+
+/// Convert an owned String to an Robj string array object.
+impl From<String> for Robj {
+    fn from(val: String) -> Self {
+        unsafe {
+            let sexp = Rf_allocVector(STRSXP, 1);
+            R_PreserveObject(sexp);
+            let ssexp = Rf_mkCharLen(val.as_ptr() as *const raw::c_char, val.len() as i32);
+            let ptr = STRING_PTR(sexp);
+            let slice = std::slice::from_raw_parts_mut(ptr, 1);
+            slice[0] = ssexp;
+            Robj::Owned(sexp)
+        }
+    }
+}
+
+/// Convert a byte Vector to a raw object.
+impl From<Vec<u8>> for Robj {
+    fn from(vals: Vec<u8>) -> Self {
+        unsafe {
+            let len = vals.len();
+            let sexp = Rf_allocVector(RAWSXP, len as R_xlen_t);
+            R_PreserveObject(sexp);
+            let ptr = RAW(sexp);
+            let slice = std::slice::from_raw_parts_mut(ptr, len);
+            for (i, &v) in vals.iter().enumerate() {
+                slice[i] = v;
+            }
+            Robj::Owned(sexp)
+        }
+    }
+}
+
+
+
 // Iterator over the objects in a vector or string.
 #[derive(Clone)]
 pub struct VecIter {
