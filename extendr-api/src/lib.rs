@@ -78,8 +78,17 @@ pub use wrapper::*;
 pub use extendr_macros::*;
 pub use libR_sys::SEXP;
 
+use libR_sys::Rf_error;
+use std::os::raw;
+
 /// Generic dynamic error type.
 pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
+
+pub fn error(msg: String) {
+    unsafe {
+        Rf_error(msg.as_ptr() as *const raw::c_char);
+    }
+}
 
 #[cfg(test)]
 mod tests {
