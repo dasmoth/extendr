@@ -1276,8 +1276,7 @@ impl From<Result<Robj, crate::AnyError>> for Robj {
         match res {
             Ok(res) => res,
             Err(err) => {
-                error(format!("{}", err));
-                panic!("Continuation after reporting an R error (should be unreachable)")
+                error(format!("{}\0", err));
             }
         }
     }

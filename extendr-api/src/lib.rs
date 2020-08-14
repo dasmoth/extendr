@@ -84,10 +84,11 @@ use std::os::raw;
 /// Generic dynamic error type.
 pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
-pub fn error(msg: String) {
+pub fn error(msg: String) -> ! {
     unsafe {
         Rf_error(msg.as_ptr() as *const raw::c_char);
     }
+    loop {}
 }
 
 #[cfg(test)]
