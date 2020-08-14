@@ -610,7 +610,18 @@ impl Robj {
     SEXP Rf_findVar(SEXP, SEXP);
     SEXP Rf_findVarInFrame(SEXP, SEXP);
     SEXP Rf_findVarInFrame3(SEXP, SEXP, Rboolean);
-    SEXP Rf_getAttrib(SEXP, SEXP);
+    */
+
+    /// Get an attribute from an object
+    pub fn getAttrib(&self, symbol: &Robj) -> Robj {
+        unsafe {
+            new_owned(
+                Rf_getAttrib(self.get(), symbol.get())
+            )
+        }
+    }
+
+    /*
     SEXP Rf_GetArrayDimnames(SEXP);
     SEXP Rf_GetColNames(SEXP);
     void Rf_GetMatrixDimnames(SEXP, SEXP*, SEXP*, const char**, const char**);
@@ -659,8 +670,16 @@ impl Robj {
     SEXP R_ParseEvalString(const char *, SEXP);
     void Rf_PrintValue(SEXP);
     void Rf_printwhere(void);
-    void Rf_readS3VarsFromFrame(SEXP, SEXP*, SEXP*, SEXP*, SEXP*, SEXP*, SEXP*);
-    SEXP Rf_setAttrib(SEXP, SEXP, SEXP);
+    void Rf_readS3VarsFromFrame(SEXP, SEXP*, SEXP*, SEXP*, SEXP*, SEXP*, SEXP*);*/
+
+    /// Set an attribute from on an object
+    pub fn setAttrib(&self, symbol: &Robj, value: &Robj) {
+        unsafe {
+            Rf_setAttrib(self.get(), symbol.get(), value.get());
+        }
+    }
+
+    /*
     void Rf_setSVector(SEXP*, int, SEXP);
     void Rf_setVar(SEXP, SEXP, SEXP);
     SEXP Rf_stringSuffix(SEXP, int);
@@ -1436,5 +1455,15 @@ mod tests {
         assert_eq!(Robj::from(1_i64), Robj::from(1));
         assert_eq!(Robj::from(1.0_f32), Robj::from(1.));
         assert_eq!(Robj::from(1.0_f64), Robj::from(1.));
+    }
+
+    #[test]
+    fn test_attrib() {
+        let obj = Robj::from(1.0_f64);
+        assert!(obj.getAttrib(&Robj::namesSymbol()).isNull());
+
+        obj.setAttrib(&Robj::namesSymbol(), &Robj::from("hello"));
+
+        assert_eq!(from_robj::<&str>(&obj.getAttrib(&Robj::namesSymbol())), Ok("hello"));
     }
 }
