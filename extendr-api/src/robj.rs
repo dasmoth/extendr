@@ -10,6 +10,7 @@
 
 use libR_sys::*;
 use std::os::raw;
+use std::ffi::c_void;
 
 use crate::AnyError;
 use crate::error;
@@ -704,8 +705,31 @@ impl Robj {
     SEXP Rf_mkCharCE(const char *, cetype_t);
     SEXP Rf_mkCharLenCE(const char *, int, cetype_t);
     SEXP R_forceAndCall(SEXP e, int n, SEXP rho);
-    SEXP R_MakeExternalPtr(void *p, SEXP tag, SEXP prot);
-    void *R_ExternalPtrAddr(SEXP s);
+     */
+
+    /// Make a "pointer" SEXP from a raw pointer
+    pub fn makeExternalPtr<T>(p: *mut T, tag: &Robj, prot: &Robj) -> Robj {
+        unsafe {
+            new_owned(R_MakeExternalPtr(p as *mut c_void, tag.get(), prot.get()))
+        }
+    }
+
+    /// Get the address of a pointer SEXP made with makeExternalPtr
+    pub fn externalPtrAddr<T>(&self) -> *mut T {
+        unsafe {
+            R_ExternalPtrAddr(self.get()) as *mut T
+        }
+    }
+
+    /// Register a callback that is invoked when a pointer SEXP is garbage
+    /// collected.  Note that this currently receives a SEXP, *NOT* an Robj
+    pub fn registerCFinalizer(&self, finalizer: extern "C" fn(SEXP), onexit: bool) {
+        unsafe {
+            R_RegisterCFinalizerEx(self.get(), Some(finalizer), if onexit {1} else {0});
+        }
+    }
+
+    /*
     SEXP R_ExternalPtrTag(SEXP s);
     SEXP R_ExternalPtrProtected(SEXP s);
     void R_ClearExternalPtr(SEXP s);
