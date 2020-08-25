@@ -79,7 +79,6 @@ pub use extendr_macros::*;
 pub use libR_sys::SEXP;
 
 use libR_sys::*;
-use std::os::raw;
 use std::ffi::CString;
 
 /// Generic dynamic error type.
@@ -88,7 +87,7 @@ pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
 pub fn error<T: Into<Vec<u8>>>(msg: T) -> ! {
     let cs = CString::new(msg).expect("NulError");
     unsafe {
-        Rf_error(msg.as_ptr());
+        Rf_error(cs.as_ptr());
     }
     loop {}
 }
