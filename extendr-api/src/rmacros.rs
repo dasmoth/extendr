@@ -142,7 +142,7 @@ macro_rules! reprint {
     () => {
     };
     ($($rest: tt)*) => {
-        print_r_output(format!($($rest)*));
+        print_r_error(format!($($rest)*));
     };
 }
 
@@ -150,10 +150,10 @@ macro_rules! reprint {
 #[macro_export]
 macro_rules! reprintln {
     () => {
-        print_r_output("\n");
+        print_r_error("\n");
     };
     ($($rest: tt)*) => {
-        print_r_output(format!($($rest)*));
-        print_r_output("\n");
+        print_r_error(format!($($rest)*));
+        print_r_error("\n");
     };
 }
