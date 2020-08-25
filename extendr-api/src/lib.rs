@@ -78,17 +78,33 @@ pub use wrapper::*;
 pub use extendr_macros::*;
 pub use libR_sys::SEXP;
 
-use libR_sys::Rf_error;
+use libR_sys::*;
 use std::os::raw;
+use std::ffi::CString;
 
 /// Generic dynamic error type.
 pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
-pub fn error(msg: String) -> ! {
+pub fn error<T: Into<Vec<u8>>>(msg: T) -> ! {
+    let cs = CString::new(msg).expect("NulError");
     unsafe {
-        Rf_error(msg.as_ptr() as *const raw::c_char);
+        Rf_error(msg.as_ptr());
     }
     loop {}
+}
+
+pub fn print_r_output<T: Into<Vec<u8>>>(s: T) {
+    let cs = CString::new(s).expect("NulError");
+    unsafe {
+        Rprintf(cs.as_ptr());
+    }
+}
+
+pub fn print_r_error<T: Into<Vec<u8>>>(s: T) {
+    let cs = CString::new(s).expect("NulError");
+    unsafe {
+        REprintf(cs.as_ptr());
+    }
 }
 
 #[cfg(test)]
