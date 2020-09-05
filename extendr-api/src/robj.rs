@@ -10,12 +10,14 @@
 
 use libR_sys::*;
 use std::os::raw;
-use std::ffi::c_void;
+use std::ffi::{c_void,CString};
 
 use crate::AnyError;
 use crate::error;
 use crate::wrapper::*;
 use crate::logical::*;
+use crate::{lang,append_lang};
+use crate::args::{append,make_lang};
 
 use ndarray::prelude::*;
 
@@ -556,55 +558,208 @@ impl Robj {
         }
     }
 
-    /* TODO:
+    /* TODO (looks like it's primarily for internal use?)
     int Rf_asLogical2(SEXP x, int checking, SEXP call, SEXP rho);
-    Rcomplex Rf_asComplex(SEXP x);
+    */
+
+    pub fn asComplex(&self) -> (f64, f64) {
+        unsafe {
+            let c: Rcomplex = Rf_asComplex(self.get());
+            (c.r, c.i)
+        }
+    }
+
+    /*
     void Rf_addMissingVarsToNewEnv(SEXP, SEXP);
-    SEXP Rf_alloc3DArray(SEXPTYPE, int, int, int);
-    SEXP Rf_allocArray(SEXPTYPE, SEXP);
+     */
+
+    
+    //SEXP Rf_alloc3DArray(SEXPTYPE, int, int, int);
+    pub fn alloc3DArray(sexptype: SEXPTYPE, x: i32, y: i32, z: i32) -> Robj {
+        unsafe {
+            new_owned(Rf_alloc3DArray(sexptype, x, y, z))
+        }
+    }
+
+    // SEXP Rf_allocArray(SEXPTYPE, SEXP);
+    pub fn allocArray(sexptype: SEXPTYPE, dims: &[i32]) -> Robj {
+        unsafe {
+            new_owned(Rf_allocArray(sexptype, Robj::from(dims).get()))
+        }
+    }
+
+
+    /* For calling a function using internal conventions.
     SEXP Rf_allocFormalsList2(SEXP sym1, SEXP sym2);
     SEXP Rf_allocFormalsList3(SEXP sym1, SEXP sym2, SEXP sym3);
     SEXP Rf_allocFormalsList4(SEXP sym1, SEXP sym2, SEXP sym3, SEXP sym4);
     SEXP Rf_allocFormalsList5(SEXP sym1, SEXP sym2, SEXP sym3, SEXP sym4, SEXP sym5);
     SEXP Rf_allocFormalsList6(SEXP sym1, SEXP sym2, SEXP sym3, SEXP sym4, SEXP sym5, SEXP sym6);
-    SEXP Rf_allocList(int);
-    SEXP Rf_allocS4Object(void);
-    SEXP Rf_allocSExp(SEXPTYPE);
+    */
+
+    pub fn allocList(len: i32) -> Robj {
+        unsafe {
+            new_owned(Rf_allocList(len))
+        }
+    }
+    
+    pub fn allocS4Object() -> Robj {
+        unsafe {
+            new_owned(Rf_allocS4Object())
+        }
+    }
+    
+    pub fn allocSExp(sexptype: SEXPTYPE) -> Robj {
+        unsafe {
+            new_owned(Rf_allocSExp(sexptype))
+        }
+    }
+
+    /* Custom allocator.  This is potentially useful, but need to think
+       about how to present the allocator interface in Rust
     SEXP Rf_allocVector3(SEXPTYPE, R_xlen_t, R_allocator_t*);
-    R_xlen_t Rf_any_duplicated(SEXP x, Rboolean from_last);
-    R_xlen_t Rf_any_duplicated3(SEXP x, SEXP incomp, Rboolean from_last);
+     */
+
+    /// Return a logical vector indicating duplicated elements
+    pub fn duplicated(&self, from_last: bool) -> Robj {
+        unsafe {
+            new_owned(Rf_duplicated(self.get(), if from_last {1} else {0}))
+        }
+    }
+
+    /// Return some (zero-based) index of a duplicated element, or None.
+    pub fn anyDuplicated(&self, from_last: bool) -> Option<u32> {
+        unsafe {
+            let res = Rf_any_duplicated(self.get(), if from_last {1} else {0});
+            if res == 0 {
+                None
+            } else {
+                Some((res-1) as u32)
+            } 
+        }
+    }
+
+    /// Return some (zero-based) index of a duplicated element, or None.
+    /// Allows a vector in "incomparable" values to ignore.
+    pub fn anyDuplicatedIncomp(&self, incomp: &Robj, from_last: bool) -> Option<u32> {
+        unsafe {
+            let res = Rf_any_duplicated3(self.get(), incomp.get(), if from_last {1} else {0});
+            if res == 0 {
+                None
+            } else {
+                Some((res-1) as u32)
+            } 
+        }
+    }
+    
+    /*
+    Low-level access to the interpreter, needs more investigation
     SEXP Rf_applyClosure(SEXP, SEXP, SEXP, SEXP, SEXP);
+     */
+
+    /* Array subsetting and subassignment, probably not useful from Rust?
     SEXP Rf_arraySubscript(int, SEXP, SEXP, SEXP (*)(SEXP,SEXP), SEXP (*)(SEXP, int), SEXP);
+     */
+
+    /* Redundant with foo.setAttrib(Robj::classSymbol(), ...) 
+    
     SEXP Rf_classgets(SEXP, SEXP);
-    SEXP Rf_cons(SEXP, SEXP);
+     */
+    
+    /// Make a pair
+    pub fn cons(&self, cdr: &Robj) ->  Robj {
+        unsafe {
+            new_owned(Rf_cons(self.get(), cdr.get()))
+        }
+    }
+
+    /* Subassignment
     SEXP Rf_fixSubset3Args(SEXP, SEXP, SEXP, SEXP*);
+     */
+
+
+    /* These seem redundant with things that can be done to ndarrays
     void Rf_copyMatrix(SEXP, SEXP, Rboolean);
     void Rf_copyListMatrix(SEXP, SEXP, Rboolean);
-    void Rf_copyMostAttrib(SEXP, SEXP);
     void Rf_copyVector(SEXP, SEXP);
+    */
+
+    /// Propagate attributes from `from`.  Dim and names are not
+    /// copied, and should be assigned elsewhere.  NB order of
+    /// arguments reversed w.r.t. C API, for more logical behaviour
+    /// when used as a method.
+    pub fn copyMostAttrib(&self, from: &Robj) {
+        unsafe {
+            Rf_copyMostAttrib(from.get(), self.get());
+        }
+    }
+
+    /* Only needed for implementing REPLs
     int Rf_countContexts(int, int);
     SEXP Rf_CreateTag(SEXP);
     void Rf_defineVar(SEXP, SEXP, SEXP);
-    SEXP Rf_dimgets(SEXP, SEXP);
-    SEXP Rf_dimnamesgets(SEXP, SEXP);
-    SEXP Rf_DropDims(SEXP);
     */
+
+
+    /* Redundant with foo.setAttrib(Robj::dimSymbol(), ...) 
+    SEXP Rf_dimgets(SEXP, SEXP);*/
+
+    /* Redundant with foo.setAttrib(Robj::dimNameSymbol(), ...) 
+    SEXP Rf_dimnamesgets(SEXP, SEXP);*/
+
+    /// Strip redundant dimensioning information
+    pub fn dropDims(&self) -> Robj {
+        unsafe {
+            new_owned(Rf_DropDims(self.get()))
+        }
+    }
 
     /// Compatible way to duplicate an object. Use obj.clone() instead
     /// for Rust compaitibility.
     pub fn duplicate(&self) -> Self {
-        unsafe {new_owned(Rf_duplicate(self.get()))}
+        unsafe {
+            new_owned(Rf_duplicate(self.get()))
+        }
     }
 
-    /*
-    SEXP Rf_shallow_duplicate(SEXP);
-    SEXP R_duplicate_attr(SEXP);
-    SEXP R_shallow_duplicate_attr(SEXP);
+    /// Shallow copy
+    pub fn shallowDuplicate(&self) -> Robj {
+        unsafe {
+            new_owned(Rf_shallow_duplicate(self.get()))
+        }
+    }
+
+    /// Wrap an object and its children, allowing attributes to be
+    /// set without copying data.  Falls back to duplicate if
+    /// wrapping is not available
+    pub fn duplicateAttr(&self) -> Robj {
+        unsafe {
+            new_owned(R_duplicate_attr(self.get()))
+        }
+    }
+
+    /// Wrap an object, allowing attributes to be set without copying
+    /// data.  Falls back to duplicate if wrapping is not available
+    pub fn shallow_duplicateAttr(&self) -> Robj {
+        unsafe {
+            new_owned(R_shallow_duplicate_attr(self.get()))
+        }
+    }
+
+
+    /* Is this needed given ownership on the Rust side?
     SEXP Rf_lazy_duplicate(SEXP);
-    SEXP Rf_duplicated(SEXP, Rboolean);
+     */
+
+    /* Interpretation
     Rboolean R_envHasNoSpecialSymbols(SEXP);
-    SEXP Rf_eval(SEXP, SEXP);
-    SEXP Rf_ExtractSubset(SEXP, SEXP, SEXP);
+    SEXP Rf_eval(SEXP, SEXP);*/
+
+
+    /* Better done using ndarray API???
+    SEXP Rf_ExtractSubset(SEXP,SEXP, SEXP);*/
+
+    /* Interpretation
     SEXP Rf_findFun(SEXP, SEXP);
     SEXP Rf_findFun3(SEXP, SEXP, SEXP);
     void Rf_findFunctionForBody(SEXP);
@@ -622,17 +777,49 @@ impl Robj {
         }
     }
 
-    /*
-    SEXP Rf_GetArrayDimnames(SEXP);
+    /* Redundant with foo.getAttrib(Robj::dimNamesSymbol())
+    SEXP Rf_GetArrayDimnames(SEXP);*/
+
+    /* In modern R, these are just convenience functions for extracting
+       the first and second items from dimnames.  Not much use exposing
+       them here?  Possibly more useful to have dedicated ways to get row
+       and col names for a 2d array?
     SEXP Rf_GetColNames(SEXP);
+    SEXP Rf_GetRowNames(SEXP);
+    */
+
+
+    /* Another convenience function for dealing with dimnames.  This can return
+       R_alloc'ed memory, so would need to think carefully about lifetime of
+       returned object.  Best to try and use getAttrib(Robj::dimNamesSymbol())
+       instead. 
     void Rf_GetMatrixDimnames(SEXP, SEXP*, SEXP*, const char**, const char**);
-    SEXP Rf_GetOption(SEXP, SEXP);
-    SEXP Rf_GetOption1(SEXP);
+     */
+
+
+    /* Just a wrapper for GetOption1
+    SEXP Rf_GetOption(SEXP, SEXP); */
+
+
+
+
+    /* Not clear why these are exposed, internal to GetOptions functions
     int Rf_FixupDigits(SEXP, warn_type);
-    int Rf_FixupWidth (SEXP, warn_type);
+    int Rf_FixupWidth (SEXP, warn_type); */
+
+    /* TODO?
     int Rf_GetOptionDigits(void);
     int Rf_GetOptionWidth(void);
-    SEXP Rf_GetRowNames(SEXP);
+    */
+
+    pub fn install<T: Into<Vec<u8>>>(symbol: T) -> Robj {
+        let cs = CString::new(symbol).expect("NulError");
+        unsafe {
+            new_owned(Rf_install(cs.as_ptr()))
+        }
+    }
+    
+    /*
     void Rf_gsetVar(SEXP, SEXP, SEXP);
     SEXP Rf_install(const char *);
     SEXP Rf_installChar(SEXP);
@@ -652,8 +839,14 @@ impl Robj {
     SEXP Rf_match(SEXP, SEXP, int);
     SEXP Rf_matchE(SEXP, SEXP, int, SEXP);
     SEXP Rf_namesgets(SEXP, SEXP);
+     */
+
+    /* Redundant with Robj::from(str)
     SEXP Rf_mkChar(const char *);
     SEXP Rf_mkCharLen(const char *, int);
+     */
+
+    /* Used for subscript/subassign.
     Rboolean Rf_NonNullStringMatch(SEXP, SEXP);
     */
 
@@ -665,7 +858,15 @@ impl Robj {
         unsafe { Rf_nrows(self.get()) as usize }
     }
     
-    /*SEXP Rf_nthcdr(SEXP, int);
+    // Skip n items of a cons-list
+    pub fn nthcdr(&self, n: u32) -> Robj {
+        unsafe {
+            new_owned(Rf_nthcdr(self.get(), n as i32))
+        }
+    }
+    
+    
+    /* String matching -- do in Rust instead?
     Rboolean Rf_pmatch(SEXP, SEXP, Rboolean);
     Rboolean Rf_psmatch(const char *, const char *, Rboolean);
     SEXP R_ParseEvalString(const char *, SEXP);
@@ -729,18 +930,61 @@ impl Robj {
         }
     }
 
-    /*
-    SEXP R_ExternalPtrTag(SEXP s);
-    SEXP R_ExternalPtrProtected(SEXP s);
-    void R_ClearExternalPtr(SEXP s);
-    void R_SetExternalPtrAddr(SEXP s, void *p);
-    void R_SetExternalPtrTag(SEXP s, SEXP tag);
-    void R_SetExternalPtrProtected(SEXP s, SEXP p);
+    /// Get the tag for an object referring to an external pointer
+    pub fn externalPtrTag(&self) -> Robj {
+        unsafe {
+            new_owned(R_ExternalPtrTag(self.get()))
+        }
+    }    
+
+    /// Get the protected region for an object referring to an external pointer
+    pub fn externalPtrProtected(&self) -> Robj {
+        unsafe {
+            new_owned(R_ExternalPtrProtected(self.get()))
+        }
+    }
+
+    /// Clear an external pointer, setting it to null and releasing the reference to any
+    /// "protected" object
+    pub fn clearExternalPtr(&self) {
+        unsafe {
+            R_ClearExternalPtr(self.get());
+        }
+    }
+
+    /// Change the address of a "pointer" SEXP
+    pub fn setExternalPtrAddr<T>(&self, p: *mut T) {
+        unsafe {
+            R_SetExternalPtrAddr(self.get(), p as *mut c_void);
+        }
+    }
+
+    /// Set the tag of a "pointer" SEXP
+    pub fn setExternalPtrTag(&self, tag: &Robj) {
+        unsafe {
+            R_SetExternalPtrTag(self.get(), tag.get());
+        }
+    }
+
+    /// Set the protected resource of a "pointer" SEXP
+    pub fn setExternalPtrProtected(&self, protected: &Robj) {
+        unsafe {
+            R_SetExternalPtrProtected(self.get(), protected.get());
+        }
+    }
+
+    
+    /* "Writing R extensions" states that weak references aren't currently used,
+       on CRAN, so probably best not to encourage them here.
+
     SEXP R_MakeWeakRef(SEXP key, SEXP val, SEXP fin, Rboolean onexit);
     SEXP R_MakeWeakRefC(SEXP key, SEXP val, R_CFinalizer_t fin, Rboolean onexit);
     SEXP R_WeakRefKey(SEXP w);
     SEXP R_WeakRefValue(SEXP w);
     void R_RunWeakRefFinalizer(SEXP w);
+    */
+
+    /* Interpreter and serializer/deserializer
     SEXP R_PromiseExpr(SEXP);
     SEXP R_ClosureExpr(SEXP);
     SEXP R_BytecodeExpr(SEXP e);
@@ -1325,8 +1569,6 @@ impl From<Result<Robj, crate::AnyError>> for Robj {
     }
 }
 
-
-
 // Iterator over the objects in a vector or string.
 #[derive(Clone)]
 pub struct VecIter {
@@ -1489,5 +1731,12 @@ mod tests {
         obj.setAttrib(&Robj::namesSymbol(), &Robj::from("hello"));
 
         assert_eq!(from_robj::<&str>(&obj.getAttrib(&Robj::namesSymbol())), Ok("hello"));
+    }
+
+    #[test]
+    fn test_alloc() {
+        let obj = Robj::allocArray(REALSXP, &[2,3,4,5]);
+        let dims = lang!("dim", obj).eval().unwrap();
+        assert_eq!(format!("{:?}", dims), "[2, 3, 4, 5]");
     }
 }

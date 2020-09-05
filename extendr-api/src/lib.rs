@@ -106,6 +106,12 @@ pub fn print_r_error<T: Into<Vec<u8>>>(s: T) {
     }
 }
 
+pub fn get_option(tag: &Robj) -> Robj {
+    unsafe {
+        new_owned(Rf_GetOption1(tag.get()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use extendr_macros::export_function;
